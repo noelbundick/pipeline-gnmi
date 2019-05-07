@@ -107,6 +107,7 @@ const (
 	DATACHANNELDEPTH = 1000
 	LOGDATALIMIT     = 32
 	ID               = "pipeline"
+	CONFIG_PREFIX	 = "PIPELINE"
 )
 
 // CLI options, keep to a minimum.  Configuration should be in .conf
@@ -393,6 +394,23 @@ func loadConfig() error {
 	if err != nil {
 		return fmt.Errorf("read configuration file %s, %v\n",
 			conductor.Configfile, err)
+	}
+
+	//
+	// Allow for environment variable overrides
+	envOverrides := os.Environ()
+	for _, override := range envOverrides {
+		if strings.HasPrefix(override, CONFIG_PREFIX) {
+			delimiterIndex := strings.Index(override, "=")
+			key := override[len(CONFIG_PREFIX)+1:delimiterIndex]
+			val := override[delimiterIndex+1:]
+
+			separatorIndex := strings.Index(key, "_")
+			section := key[:separatorIndex]
+			option := key[separatorIndex+1:]
+
+			cfg.AddOption(section, option, val)
+		}
 	}
 
 	nc.config = cfg

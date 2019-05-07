@@ -66,6 +66,11 @@ type kafkaProducerConfig struct {
 	logData      bool
 	logCtx       *log.Entry
 	stats        msgStats
+	enableTLS    bool
+	enableSASL   bool
+	saslUsername string
+	saslPassword string
+	kafkaVersion sarama.KafkaVersion
 }
 
 type kafkaConsumerConfig struct {
@@ -316,6 +321,12 @@ func (cfg *kafkaProducerConfig) kafkaFeederLoopSticky(
 		config := sarama.NewConfig()
 		config.Producer.RequiredAcks = cfg.requiredAcks
 		config.Producer.Return.Successes = true
+		config.Net.TLS.Enable = cfg.enableTLS
+		config.Net.SASL.Enable = cfg.enableSASL
+		config.Net.SASL.User = cfg.saslUsername
+		config.Net.SASL.Password = cfg.saslPassword
+		config.Version = cfg.kafkaVersion
+
 		msgproducer, err = sarama.NewSyncProducer(cfg.brokerList, config)
 		if err != nil {
 			cfg.logCtx.WithError(err).Error(
@@ -357,6 +368,7 @@ func (k *kafkaOutputModule) configure(name string, nc nodeConfig) (
 
 	var topicTemplate *template.Template
 	var requiredAcks sarama.RequiredAcks
+	var kafkaVersion sarama.KafkaVersion
 
 	logctx := logger.WithFields(log.Fields{"name": name})
 
@@ -453,14 +465,53 @@ func (k *kafkaOutputModule) configure(name string, nc nodeConfig) (
 		}
 	}
 
-	logctx = logctx.WithFields(
-		log.Fields{
-			"name":         name,
-			"topic":        topicExtractor(nil),
-			"brokers":      brokerList,
-			"streamSpec":   streamSpec,
-			"requiredAcks": requiredAcks,
-		})
+	enableTLS, err := nc.config.GetBool(name, "tls")
+	if err != nil {
+		enableTLS = false
+	}
+
+	enableSASL, err := nc.config.GetBool(name, "sasl")
+	if err != nil {
+		enableSASL = false
+	}
+
+	saslUsername, err := nc.config.GetString(name, "saslUsername")
+	if err != nil {
+		saslUsername = ""
+	}
+
+	saslPassword, err := nc.config.GetString(name, "saslPassword")
+	if err != nil {
+		saslPassword = ""
+	}
+
+	kafkaVersionString, err := nc.config.GetString(name, "kafkaVersion")
+	if err != nil {
+		kafkaVersion = sarama.MinVersion
+	} else {
+		kafkaVersion, err = sarama.ParseKafkaVersion(kafkaVersionString)
+		if err != nil {
+			logctx.WithError(err).Error(
+				"invalid kafka version")
+		}
+	}
+
+	logFields := log.Fields{
+		"name":         name,
+		"topic":        topicExtractor(nil),
+		"brokers":      brokerList,
+		"streamSpec":   streamSpec,
+		"requiredAcks": requiredAcks,
+		"enableTLS":    enableTLS,
+		"enableSASL":   enableSASL,
+		"saslUsername": saslUsername,
+		"kafkaVersion": kafkaVersion,
+	}
+	if saslPassword != "" {
+		logFields["saslPassword"] = "*****"
+	}
+
+	logctx = logctx.WithFields(logFields)
 	//
 	// track config in struct
 	cfg := &kafkaProducerConfig{
@@ -472,6 +523,11 @@ func (k *kafkaOutputModule) configure(name string, nc nodeConfig) (
 		requiredAcks: requiredAcks,
 		logData:      logData,
 		logCtx:       logctx,
+		enableTLS:    enableTLS,
+		enableSASL:   enableSASL,
+		saslUsername: saslUsername,
+		saslPassword: saslPassword,
+		kafkaVersion: kafkaVersion,
 	}
 
 	// Create the required channels; a sync ctrl channel and a data channel.

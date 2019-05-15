@@ -396,23 +396,6 @@ func loadConfig() error {
 			conductor.Configfile, err)
 	}
 
-	//
-	// Allow for environment variable overrides
-	envOverrides := os.Environ()
-	for _, override := range envOverrides {
-		if strings.HasPrefix(override, CONFIG_PREFIX) {
-			delimiterIndex := strings.Index(override, "=")
-			key := override[len(CONFIG_PREFIX)+1:delimiterIndex]
-			val := override[delimiterIndex+1:]
-
-			separatorIndex := strings.Index(key, "_")
-			section := key[:separatorIndex]
-			option := key[separatorIndex+1:]
-
-			cfg.AddOption(section, option, val)
-		}
-	}
-
 	nc.config = cfg
 
 	conductor.ID, err = nc.config.GetString("default", "id")

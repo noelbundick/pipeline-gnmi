@@ -81,6 +81,11 @@ type kafkaConsumerConfig struct {
 	keySpec       kafkaKeySpec
 	msgEncoding   encoding
 	logData       bool
+	enableTLS    bool
+	enableSASL   bool
+	saslUsername string
+	saslPassword string
+	kafkaVersion sarama.KafkaVersion
 }
 
 //
@@ -650,14 +655,22 @@ func (k *kafkaInputModule) maintainKafkaConsumerConnection(
 
 	//
 	// Setup logging context once
-	logCtx := logger.WithFields(
-		log.Fields{
-			"name":     k.name,
-			"topic":    cfg.topic,
-			"group":    cfg.consumerGroup,
-			"brokers":  cfg.brokerList,
-			"encoding": encodingToName(cfg.msgEncoding),
-		})
+	logFields := log.Fields{
+		"name":     k.name,
+		"topic":    cfg.topic,
+		"group":    cfg.consumerGroup,
+		"brokers":  cfg.brokerList,
+		"encoding": encodingToName(cfg.msgEncoding),
+		"enableTLS":    cfg.enableTLS,
+		"enableSASL":   cfg.enableSASL,
+		"saslUsername": cfg.saslUsername,
+		"kafkaVersion": cfg.kafkaVersion,
+	}
+	if cfg.saslPassword != "" {
+		logFields["saslPassword"] = "*****"
+	}
+
+	logCtx := logger.WithFields(logFields)
 
 	//
 	// Setup codec according to configuration
@@ -674,6 +687,11 @@ func (k *kafkaInputModule) maintainKafkaConsumerConnection(
 		//
 		// Get a default configuration
 		clusterConfig := cluster.NewConfig()
+		clusterConfig.Net.TLS.Enable = cfg.enableTLS
+		clusterConfig.Net.SASL.Enable = cfg.enableSASL
+		clusterConfig.Net.SASL.User = cfg.saslUsername
+		clusterConfig.Net.SASL.Password = cfg.saslPassword
+		clusterConfig.Version = cfg.kafkaVersion
 
 		//
 		// Register to receive notifications on rebalancing of
@@ -873,6 +891,8 @@ func (k *kafkaInputModule) configure(
 	nc nodeConfig,
 	dataChans []chan<- dataMsg) (error, chan<- *ctrlMsg) {
 
+	var kafkaVersion sarama.KafkaVersion
+
 	k.name = name
 
 	brokers, err := nc.config.GetString(name, "brokers")
@@ -934,6 +954,37 @@ func (k *kafkaInputModule) configure(
 		return err, nil
 	}
 
+	enableTLS, err := nc.config.GetBool(name, "tls")
+	if err != nil {
+		enableTLS = false
+	}
+
+	enableSASL, err := nc.config.GetBool(name, "sasl")
+	if err != nil {
+		enableSASL = false
+	}
+
+	saslUsername, err := nc.config.GetString(name, "saslUsername")
+	if err != nil {
+		saslUsername = ""
+	}
+
+	saslPassword, err := nc.config.GetString(name, "saslPassword")
+	if err != nil {
+		saslPassword = ""
+	}
+
+	kafkaVersionString, err := nc.config.GetString(name, "kafkaVersion")
+	if err != nil {
+		kafkaVersion = sarama.MinVersion
+	} else {
+		kafkaVersion, err = sarama.ParseKafkaVersion(kafkaVersionString)
+		if err != nil {
+			logger.WithError(err).Error(
+				"invalid kafka version")
+		}
+	}
+
 	//
 	// track config in struct
 	cfg := &kafkaConsumerConfig{
@@ -944,6 +995,11 @@ func (k *kafkaInputModule) configure(
 		keySpec:       keySpec,
 		msgEncoding:   enc,
 		logData:       logData,
+		enableTLS:     enableTLS,
+		enableSASL:    enableSASL,
+		saslUsername:  saslUsername,
+		saslPassword:  saslPassword,
+		kafkaVersion:  kafkaVersion,
 	}
 
 	//

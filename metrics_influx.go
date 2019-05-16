@@ -30,6 +30,7 @@ import (
 	"os"
 	"runtime"
 	"time"
+	"reflect"
 )
 
 const (
@@ -350,6 +351,11 @@ func (o *metricsInfluxOutputHandler) buildMetric(
 	switch sensor.val.(type) {
 	case uint64:
 		sensor.val = float64(sensor.val.(uint64))
+	case reflect.Value:
+		val := sensor.val.(reflect.Value)
+		if val.Kind() == reflect.Uint64 {
+			sensor.val = float64(val.Uint())
+		}
 	default:
 		// nothing to do!
 	}

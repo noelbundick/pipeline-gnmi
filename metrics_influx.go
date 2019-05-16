@@ -340,6 +340,17 @@ func (o *metricsInfluxOutputHandler) buildMetric(
 	}
 
 	//
+	// Unwrap reflected values so that they aren't written out as strings
+	//
+	switch sensor.val.(type) {
+	case reflect.Value:
+		val := sensor.val.(reflect.Value)
+		sensor.val = val.Interface()
+	default:
+		// nothing to do!
+	}
+
+	//
 	// Rewrite accursed uint64:
 	//
 	//	fmt.Printf(" uint64 [%v] -> float64 [%v]\n",
@@ -351,11 +362,6 @@ func (o *metricsInfluxOutputHandler) buildMetric(
 	switch sensor.val.(type) {
 	case uint64:
 		sensor.val = float64(sensor.val.(uint64))
-	case reflect.Value:
-		val := sensor.val.(reflect.Value)
-		if val.Kind() == reflect.Uint64 {
-			sensor.val = float64(val.Uint())
-		}
 	default:
 		// nothing to do!
 	}
